@@ -33,9 +33,17 @@ yarn-error.*
 # local env files
 .env*.local
 
-# typescript
+# typescript (not used, kept for tooling)
 *.tsbuildinfo
 
 # generated native folders
 /ios
 /android
+
+# EAS / build output
+*.apk
+*.aab
+
+# editor
+.vscode/
+.idea/
