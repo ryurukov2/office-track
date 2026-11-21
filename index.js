@@ -1,4 +1,5 @@
 import { registerRootComponent } from 'expo';
+import './src/backgroundTask';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

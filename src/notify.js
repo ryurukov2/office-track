@@ -37,8 +37,8 @@ export async function setupNotifications() {
       showBadge: false,
     });
   }
-  // opensAppToForeground: the app records the action as it opens.
-  const opts = { opensAppToForeground: true };
+  // Buttons are handled in the background (see src/backgroundTask.js), so the app stays closed.
+  const opts = { opensAppToForeground: false };
   await Notifications.setNotificationCategoryAsync(CAT_IN, [
     { identifier: A_SMOKE, buttonTitle: '🚬 Smoke', options: opts },
     { identifier: A_LUNCH, buttonTitle: '🍽️ Lunch', options: opts },
