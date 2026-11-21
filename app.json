@@ -24,6 +24,12 @@
     },
     "plugins": [
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ae5c1254-9d8f-4fd1-a362-7e738d6d2c2d"
+      }
+    },
+    "owner": "ryurukov"
   }
 }
