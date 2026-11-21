@@ -3,6 +3,8 @@
  * ----------
  * A day is a list of events, stored under the key "day:YYYY-MM-DD":
  *   { id: string, type: 'in' | 'break' | 'back' | 'out', ts: number (ms), kind?: 'smoke' | 'lunch' | 'other' }
+ * plus manual corrections, which don't change the status:
+ *   { id: string, type: 'adjust', ts: number, deltaMs: number }   e.g. -10 min for a forgotten smoke break
  *
  * Status is derived from the last event: 'out' | 'in' | 'break'.
  * Everything else (worked time, breaks, balances) is calculated from the events.
@@ -19,7 +21,8 @@ export const newId = () => `${Date.now().toString(36)}${Math.random().toString(3
 
 /** Status after applying events in order. */
 export function statusOf(events) {
-  const last = events[events.length - 1];
+  const real = events.filter((e) => e.type !== 'adjust');
+  const last = real[real.length - 1];
   if (!last || last.type === 'out') return 'out';
   if (last.type === 'break') return 'break';
   return 'in';
@@ -54,7 +57,12 @@ export function summarize(events, now = Date.now()) {
       s.breakByKind[kind] += d;
     }
   };
+  let adjustMs = 0;
   for (const e of sorted) {
+    if (e.type === 'adjust') {
+      adjustMs += e.deltaMs ?? 0;
+      continue;
+    }
     close(e.ts);
     since = e.ts;
     if (e.type === 'in' || e.type === 'back') {
@@ -70,6 +78,8 @@ export function summarize(events, now = Date.now()) {
     }
   }
   close(Math.max(now, since));
+  s.adjustMs = adjustMs;
+  s.workedMs = Math.max(0, s.workedMs + adjustMs);
   if (s.status === 'break') {
     s.breakStartedAt = since;
     s.currentBreakKind = kind;
@@ -103,7 +113,13 @@ export const LABELS = {
   break: 'Break',
   back: 'Back',
   out: 'Left',
+  adjust: 'Manual adjustment',
 };
+
+/** "+10m" / "−1h 05m" for manual adjustments. */
+export function fmtDelta(ms) {
+  return `${ms < 0 ? '−' : '+'}${fmtDur(Math.abs(ms))}`;
+}
 
 export const KIND_LABELS = {
   smoke: '🚬 Smoke',
