@@ -1,11 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  allowed,
   dayKey,
+  fmtDelta,
   fmtBalance,
   fmtDur,
   fmtHM,
@@ -15,20 +14,11 @@ import {
   leaveAt,
   monthBalance,
   newId,
-  statusOf,
   summarize,
 } from './src/model';
-import { DEFAULT_SETTINGS, loadAllDays, loadDay, loadSettings, saveDay, saveSettings } from './src/storage';
-import {
-  A_BACK,
-  A_LEAVE,
-  A_LUNCH,
-  A_SMOKE,
-  setupNotifications,
-  updateStatusNotification,
-} from './src/notify';
-
-const HANDLED_KEY = 'lastHandledNotificationResponse';
+import { DEFAULT_SETTINGS, loadAllDays, loadDay, loadSettings, saveSettings } from './src/storage';
+import { setupNotifications } from './src/notify';
+import { handleNotificationResponse, recordAction, refreshNotification, saveDayEvents } from './src/actions';
 
 export default function App() {
   const [tab, setTab] = useState('today');
@@ -36,11 +26,9 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [now, setNow] = useState(Date.now());
-  const [editing, setEditing] = useState(null);
+  const [dayEdit, setDayEdit] = useState(null); // { key, selectedId? } for the day editor
   const [loaded, setLoaded] = useState(false);
   const [allDays, setAllDays] = useState([]);
-  const eventsRef = useRef([]);
-  eventsRef.current = events;
   const targetMs = settings.targetMinutes * 60_000;
   const sum = useMemo(() => summarize(events, now), [events, now]);
   // Monthly balance from previous days of this month (today is added live below).
@@ -51,8 +39,6 @@ export default function App() {
     () => monthBalance(allDays, today.slice(0, 7), targetMs, today),
     [allDays, today, targetMs],
   );
-  const pastRef = useRef(0);
-  pastRef.current = past.balanceMs;
   // Load + tick every second; roll over to a new day at midnight.
   useEffect(() => {
     (async () => {
@@ -93,44 +79,39 @@ export default function App() {
   useEffect(() => {
     if (loaded) loadDay(today).then(setEvents);
   }, [today]);
-  const persist = useCallback(
-    async (next) => {
-      const sorted = [...next].sort((a, b) => a.ts - b.ts);
-      setEvents(sorted);
-      await saveDay(today, sorted);
-      await updateStatusNotification(summarize(sorted), targetMs, pastRef.current);
-    },
-    [today, targetMs],
-  );
+  const reloadToday = useCallback(async () => setEvents(await loadDay(dayKey())), []);
+
+  // Arrive / break / back / leave taps from the app.
   const record = useCallback(
     async (type, kind) => {
-      const cur = eventsRef.current;
-      if (!allowed(statusOf(cur)).includes(type)) return;
-      await persist([...cur, { id: newId(), type, ts: Date.now(), kind }]);
+      await recordAction(type, kind);
+      await reloadToday();
     },
-    [persist],
+    [reloadToday],
   );
-  // Notification text only changes when events/target change, so no timer needed.
+
+  // Save a whole day (edited entry, manual adjustment or deleted day).
+  const saveDayAndReload = useCallback(
+    async (key, next) => {
+      await saveDayEvents(key, next);
+      if (key === dayKey()) await reloadToday();
+      setAllDays(await loadAllDays());
+    },
+    [reloadToday],
+  );
+
+  // Keep the notification in sync when the quota changes or the app starts.
   useEffect(() => {
-    if (loaded) updateStatusNotification(summarize(events), targetMs, past.balanceMs);
-  }, [loaded, events, targetMs, past.balanceMs]);
-  // Notification buttons.
+    if (loaded) refreshNotification();
+  }, [loaded, targetMs]);
+
+  // Notification button pressed while the app is open (in the background they're handled by src/backgroundTask.js).
   const response = Notifications.useLastNotificationResponse();
   useEffect(() => {
     if (!loaded || !response) return;
-    const action = response.actionIdentifier;
-    if (action === Notifications.DEFAULT_ACTION_IDENTIFIER) return;
-    const key = `${response.notification.request.identifier}|${response.notification.date}|${action}`;
-    (async () => {
-      if ((await AsyncStorage.getItem(HANDLED_KEY)) === key) return;
-      await AsyncStorage.setItem(HANDLED_KEY, key);
-      if (action === A_SMOKE) await record('break', 'smoke');
-      else if (action === A_LUNCH) await record('break', 'lunch');
-      else if (action === A_BACK) await record('back');
-      else if (action === A_LEAVE) await record('out');
-      Notifications.clearLastNotificationResponse?.();
-    })();
-  }, [response, loaded, record]);
+    handleNotificationResponse(response).then((handled) => handled && reloadToday());
+  }, [response, loaded, reloadToday]);
+
   const leave = leaveAt(sum, targetMs, now);
   const progress = Math.min(1, sum.workedMs / targetMs);
   const done = sum.workedMs >= targetMs;
@@ -233,17 +214,22 @@ export default function App() {
             <Stat label="First in" value={sum.firstIn ? fmtTime(sum.firstIn) : '-'} />
           </View>
 
+          <Pressable onPress={() => setDayEdit({ key: today })} style={styles.editDayBtn}>
+            <Text style={styles.shiftText}>✏️ Edit day · manual add / subtract time</Text>
+          </Pressable>
+
           <Text style={styles.section}>Today's log · tap to fix a time</Text>
           {events.length === 0 && (
             <Text style={styles.muted}>Nothing yet. Tap "Arrived" when you pass the turnstile.</Text>
           )}
           {events.map((e) => (
-            <Pressable key={e.id} onPress={() => setEditing(e)} style={styles.logRow}>
+            <Pressable
+              key={e.id}
+              onPress={() => setDayEdit({ key: today, selectedId: e.id })}
+              style={styles.logRow}
+            >
               <Text style={styles.logTime}>{fmtTime(e.ts)}</Text>
-              <Text style={styles.logText}>
-                {LABELS[e.type]}
-                {e.type === 'break' && e.kind ? ` · ${KIND_LABELS[e.kind]}` : ''}
-              </Text>
+              <Text style={styles.logText}>{eventLabel(e)}</Text>
               <Text style={styles.muted}>edit</Text>
             </Pressable>
           ))}
@@ -252,6 +238,7 @@ export default function App() {
         <History
           settings={settings}
           days={allDays}
+          onOpenDay={(key) => setDayEdit({ key })}
           onSettings={async (s) => {
             setSettings(s);
             await saveSettings(s);
@@ -259,18 +246,16 @@ export default function App() {
         />
       )}
 
-      <EditModal
-        event={editing}
-        onClose={() => setEditing(null)}
-        onSave={async (e) => {
-          await persist(events.map((x) => (x.id === e.id ? e : x)));
-          setEditing(null);
-        }}
-        onDelete={async (e) => {
-          await persist(events.filter((x) => x.id !== e.id));
-          setEditing(null);
-        }}
-      />
+      {dayEdit && (
+        <DayModal
+          dayKeyStr={dayEdit.key}
+          initialSelectedId={dayEdit.selectedId}
+          events={dayEdit.key === today ? events : (allDays.find((d) => d.key === dayEdit.key)?.events ?? [])}
+          targetMs={targetMs}
+          onChange={(next) => saveDayAndReload(dayEdit.key, next)}
+          onClose={() => setDayEdit(null)}
+        />
+      )}
     </View>
   );
 }
@@ -299,48 +284,151 @@ function Stat({ label, value }) {
   );
 }
 
-function EditModal({ event, onClose, onSave, onDelete }) {
+function eventLabel(e) {
+  if (e.type === 'adjust') return `✍️ ${LABELS.adjust} ${fmtDelta(e.deltaMs)}`;
+  return `${LABELS[e.type]}${e.type === 'break' && e.kind ? ` · ${KIND_LABELS[e.kind]}` : ''}`;
+}
+
+function fmtDayTitle(key) {
+  return new Date(`${key}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+/**
+ * Edit a whole day: manual add/subtract time, fix or delete single entries, or delete the day.
+ */
+function DayModal({ dayKeyStr, events, initialSelectedId, targetMs, onChange, onClose }) {
+  const [selectedId, setSelectedId] = useState(initialSelectedId ?? null);
   const [ts, setTs] = useState(0);
+  const selected = events.find((e) => e.id === selectedId) ?? null;
   useEffect(() => {
-    if (event) setTs(event.ts);
-  }, [event]);
-  if (!event) return null;
+    if (selected) setTs(selected.ts);
+  }, [selectedId]);
+
+  const sum = summarize(events);
+  const delta = sum.workedMs - targetMs;
+
+  const adjust = (min) =>
+    onChange([...events, { id: newId(), type: 'adjust', ts: Date.now(), deltaMs: min * 60_000 }]);
+
+  const deleteDay = () =>
+    Alert.alert('Delete this day?', `All entries for ${fmtDayTitle(dayKeyStr)} will be removed.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await onChange([]);
+          onClose();
+        },
+      },
+    ]);
+
   const shift = (min) => setTs((t) => Math.min(Date.now(), t + min * 60_000));
+
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.modal} onPress={() => {}}>
-          <Text style={styles.modalTitle}>
-            {LABELS[event.type]}
-            {event.kind ? ` · ${KIND_LABELS[event.kind]}` : ''}
+          <Text style={styles.modalTitle}>{fmtDayTitle(dayKeyStr)}</Text>
+          <Text style={styles.modalTime}>{fmtHM(sum.workedMs)}</Text>
+          <Text style={[styles.muted, { textAlign: 'center' }]}>
+            {events.length ? fmtBalance(delta) + ' for this day' : 'No entries'}
+            {sum.adjustMs ? ` · manual ${fmtDelta(sum.adjustMs)}` : ''}
           </Text>
-          <Text style={styles.modalTime}>{fmtTime(ts)}</Text>
-          {[
-            [-30, -5, -1],
-            [1, 5, 30],
-          ].map((row, i) => (
-            <View key={i} style={styles.row}>
-              {row.map((m) => (
-                <Pressable key={m} onPress={() => shift(m)} style={styles.shiftBtn}>
-                  <Text style={styles.shiftText}>{m > 0 ? `+${m}` : m} min</Text>
+
+          {selected ? (
+            <>
+              <Text style={styles.section}>{eventLabel(selected)}</Text>
+              {selected.type !== 'adjust' && (
+                <>
+                  <Text style={[styles.modalTime, { fontSize: 36 }]}>{fmtTime(ts)}</Text>
+                  {[
+                    [-30, -5, -1],
+                    [1, 5, 30],
+                  ].map((row, i) => (
+                    <View key={i} style={styles.row}>
+                      {row.map((m) => (
+                        <Pressable key={m} onPress={() => shift(m)} style={styles.shiftBtn}>
+                          <Text style={styles.shiftText}>{m > 0 ? `+${m}` : m} min</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ))}
+                </>
+              )}
+              <View style={[styles.row, { marginTop: 12 }]}>
+                <Pressable
+                  onPress={async () => {
+                    await onChange(events.filter((x) => x.id !== selected.id));
+                    setSelectedId(null);
+                  }}
+                  style={[styles.modalBtn, { backgroundColor: '#7f1d1d' }]}
+                >
+                  <Text style={styles.bigText}>Delete</Text>
                 </Pressable>
+                {selected.type !== 'adjust' && (
+                  <Pressable
+                    onPress={async () => {
+                      await onChange(events.map((x) => (x.id === selected.id ? { ...x, ts } : x)));
+                      setSelectedId(null);
+                    }}
+                    style={[styles.modalBtn, { backgroundColor: '#2563eb' }]}
+                  >
+                    <Text style={styles.bigText}>Save</Text>
+                  </Pressable>
+                )}
+              </View>
+              <Pressable onPress={() => setSelectedId(null)} style={{ padding: 8, alignItems: 'center' }}>
+                <Text style={styles.muted}>← back to day</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.section}>Manual add / subtract</Text>
+              {[
+                [-60, -15, -10, -5],
+                [5, 10, 15, 60],
+              ].map((row, i) => (
+                <View key={i} style={styles.row}>
+                  {row.map((m) => (
+                    <Pressable
+                      key={m}
+                      onPress={() => adjust(m)}
+                      style={[styles.shiftBtn, { backgroundColor: m < 0 ? '#3b1d2a' : '#14332a' }]}
+                    >
+                      <Text style={styles.shiftText}>{fmtDelta(m * 60_000)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
               ))}
-            </View>
-          ))}
-          <View style={[styles.row, { marginTop: 16 }]}>
-            <Pressable
-              onPress={() => onDelete(event)}
-              style={[styles.modalBtn, { backgroundColor: '#7f1d1d' }]}
-            >
-              <Text style={styles.bigText}>Delete</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => onSave({ ...event, ts })}
-              style={[styles.modalBtn, { backgroundColor: '#2563eb' }]}
-            >
-              <Text style={styles.bigText}>Save</Text>
-            </Pressable>
-          </View>
+
+              <Text style={styles.section}>Entries · tap to edit</Text>
+              <ScrollView style={{ maxHeight: 220 }}>
+                {events.length === 0 && <Text style={styles.muted}>No entries.</Text>}
+                {events.map((e) => (
+                  <Pressable key={e.id} onPress={() => setSelectedId(e.id)} style={styles.logRow}>
+                    <Text style={styles.logTime}>{e.type === 'adjust' ? '' : fmtTime(e.ts)}</Text>
+                    <Text style={styles.logText}>{eventLabel(e)}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <View style={[styles.row, { marginTop: 12 }]}>
+                {events.length > 0 && (
+                  <Pressable onPress={deleteDay} style={[styles.modalBtn, { backgroundColor: '#7f1d1d' }]}>
+                    <Text style={styles.bigText}>Delete day</Text>
+                  </Pressable>
+                )}
+                <Pressable onPress={onClose} style={[styles.modalBtn, { backgroundColor: '#1e2a45' }]}>
+                  <Text style={styles.bigText}>Done</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
@@ -359,7 +447,7 @@ function balanceColor(ms) {
   return ms > 0 ? '#4ade80' : '#f87171';
 }
 
-function History({ settings, onSettings, days }) {
+function History({ settings, onSettings, onOpenDay, days }) {
   const targetMs = settings.targetMinutes * 60_000;
   const tracked = days.filter((d) => d.events.length > 0);
   const months = [...new Set(tracked.map((d) => d.key.slice(0, 7)))].sort().reverse();
@@ -422,7 +510,7 @@ function History({ settings, onSettings, days }) {
                   const sum = summarize(d.events);
                   const delta = sum.workedMs - targetMs;
                   return (
-                    <View key={d.key} style={styles.dayRow}>
+                    <Pressable key={d.key} onPress={() => onOpenDay(d.key)} style={styles.dayRow}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.logText}>
                           {new Date(`${d.key}T00:00:00`).toLocaleDateString(undefined, {
@@ -443,7 +531,7 @@ function History({ settings, onSettings, days }) {
                           ? '±0'
                           : `${delta > 0 ? '+' : '−'}${fmtHM(Math.abs(delta))}`}
                       </Text>
-                    </View>
+                    </Pressable>
                   );
                 })}
           </View>
@@ -526,6 +614,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomColor: '#1e293b',
     borderBottomWidth: 1,
+  },
+  editDayBtn: {
+    marginTop: 20,
+    backgroundColor: '#1e2a45',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
   },
   monthCard: {
     marginTop: 20,
