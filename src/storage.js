@@ -4,7 +4,10 @@ const DAY_PREFIX = 'day:';
 
 const SETTINGS_KEY = 'settings';
 
-export const DEFAULT_SETTINGS = { targetMinutes: 7 * 60 + 40 };
+export const DEFAULT_SETTINGS = {
+  targetMinutes: 7 * 60 + 40, // daily quota
+  workdays: [1, 2, 3, 4, 5], // Date.getDay(): 0 = Sunday
+};
 
 export async function loadDay(key) {
   try {

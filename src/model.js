@@ -38,8 +38,9 @@ export function allowed(status) {
 /**
  * Walks events in time order. Time is "worked" while status is in,
  * and "break" while status is break. Ongoing segments count up to `now`.
+ * `settings` (optional) decides which time counts towards the quota (countedMs).
  */
-export function summarize(events, now = Date.now()) {
+export function summarize(events, now = Date.now(), settings) {
   const sorted = [...events].sort((a, b) => a.ts - b.ts);
   const s = {
     status: 'out',
@@ -84,6 +85,7 @@ export function summarize(events, now = Date.now()) {
     s.breakStartedAt = since;
     s.currentBreakKind = kind;
   }
+  s.countedMs = s.workedMs;
   return s;
 }
 
@@ -137,6 +139,105 @@ export function fmtHM(ms) {
 export function fmtBalance(ms) {
   if (Math.abs(ms) < 60_000) return 'on target';
   return ms > 0 ? `+${fmtDur(ms)} overtime` : `${fmtDur(-ms)} below quota`;
+}
+
+export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ---- calendar helpers (keys are "YYYY-MM-DD", local time) ----
+
+export const parseKey = (key) => new Date(`${key}T00:00:00`);
+
+export function addDays(key, n) {
+  const d = parseKey(key);
+  d.setDate(d.getDate() + n);
+  return dayKey(d);
+}
+
+export const isWorkday = (key, settings) =>
+  (settings?.workdays ?? [1, 2, 3, 4, 5]).includes(parseKey(key).getDay());
+
+export function monthRange(monthPrefix) {
+  const [y, m] = monthPrefix.split('-').map(Number);
+  return { from: `${monthPrefix}-01`, to: dayKey(new Date(y, m, 0)) };
+}
+
+export function weekRange(key) {
+  const dow = (parseKey(key).getDay() + 6) % 7; // Monday = 0
+  const from = addDays(key, -dow);
+  return { from, to: addDays(from, 6) };
+}
+
+/** The first day the app was used (earliest day with entries or a day off). Days before don't count. */
+export function trackingStart(days, offDays) {
+  const keys = [...days.filter((d) => d.events.length).map((d) => d.key), ...Object.keys(offDays ?? {})];
+  return keys.length ? keys.sort()[0] : null;
+}
+
+/**
+ * Balance over a date range (inclusive).
+ * Every workday (settings.workdays, Mon–Fri by default) is expected to have the full quota,
+ * except days off. Weekend work counts as overtime. A day only counts once it's finished
+ * (you checked out); today in the office or a past day without check-out is 'open' and not counted.
+ * Days before you started using the app are ignored. Future days off are listed but don't count.
+ *
+ * Returns { balanceMs, countedMs, workedDays, expectedDays, offCount, rows } with rows newest first:
+ *   { key, type: 'worked' | 'open' | 'off' | 'missing' | 'planned', counted, expected, delta, sum?, off? }
+ */
+export function rangeReport(days, offDays, fromKey, toKey, settings, opts = {}) {
+  const todayKey = opts.todayKey ?? dayKey();
+  const now = opts.now ?? Date.now();
+  const targetMs = settings.targetMinutes * 60_000;
+  const byKey = Object.fromEntries(days.map((d) => [d.key, d.events]));
+  const start = trackingStart(days, offDays);
+  const res = { balanceMs: 0, countedMs: 0, workedDays: 0, expectedDays: 0, offCount: 0, rows: [] };
+  if (!start) return res;
+
+  for (let key = fromKey; key <= toKey; key = addDays(key, 1)) {
+    const off = offDays?.[key];
+    if (key > todayKey) {
+      if (off) res.rows.push({ key, type: 'planned', off, counted: 0, expected: 0, delta: 0 });
+      continue;
+    }
+    if (key < start) continue;
+    if (opts.excludeToday && key === todayKey) continue;
+
+    const events = byKey[key] ?? [];
+    const has = events.length > 0;
+    const workday = isWorkday(key, settings) && !off;
+    const expectedIfDone = workday && (has || key !== todayKey) ? targetMs : 0;
+    if (!has && !off && !expectedIfDone) continue;
+
+    // Past days are measured up to their last entry, today up to now.
+    const lastTs = has ? Math.max(...events.map((e) => e.ts)) : 0;
+    const sum = has ? summarize(events, key === todayKey ? now : lastTs, settings) : null;
+    // A day only counts towards the balance once it's finished (checked out).
+    // Today while in the office, or a past day without check-out, is "open": shown but not counted.
+    const open = has && sum.status !== 'out';
+    const counted = sum && !open ? sum.countedMs : 0;
+    const expected = open ? 0 : expectedIfDone;
+    const delta = counted - expected;
+    res.balanceMs += delta;
+    res.countedMs += counted;
+    if (has && !open) res.workedDays++;
+    if (expected) res.expectedDays++;
+    if (off) res.offCount++;
+    res.rows.push({
+      key,
+      type: open ? 'open' : has ? 'worked' : off ? 'off' : 'missing',
+      off,
+      counted,
+      expected,
+      delta,
+      sum,
+    });
+  }
+  res.rows.sort((a, b) => (a.key < b.key ? 1 : -1));
+  return res;
+}
+
+export function monthReport(days, offDays, monthPrefix, settings, opts) {
+  const { from, to } = monthRange(monthPrefix);
+  return rangeReport(days, offDays, from, to, settings, opts);
 }
 
 /**
