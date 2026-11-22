@@ -7,7 +7,19 @@ const SETTINGS_KEY = 'settings';
 export const DEFAULT_SETTINGS = {
   targetMinutes: 7 * 60 + 40, // daily quota
   workdays: [1, 2, 3, 4, 5], // Date.getDay(): 0 = Sunday
+  countMode: 'worked', // 'worked' | 'turnstile' (see model.js)
+  insideKinds: { smoke: false, lunch: false, other: false }, // breaks spent inside the building
 };
+
+/** Fills in defaults for settings saved by older versions. */
+function withDefaults(saved) {
+  const d = DEFAULT_SETTINGS;
+  return {
+    ...d,
+    ...saved,
+    insideKinds: { ...d.insideKinds, ...saved.insideKinds },
+  };
+}
 
 export async function loadDay(key) {
   try {
@@ -41,7 +53,8 @@ export async function loadSettings() {
     if (parsed.targetMinutes === undefined && typeof parsed.targetHours === 'number') {
       parsed.targetMinutes = Math.round(parsed.targetHours * 60); // old format
     }
-    return { targetMinutes: parsed.targetMinutes ?? DEFAULT_SETTINGS.targetMinutes };
+    delete parsed.targetHours;
+    return withDefaults(parsed);
   } catch {
     return DEFAULT_SETTINGS;
   }

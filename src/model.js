@@ -8,6 +8,11 @@
  *
  * Status is derived from the last event: 'out' | 'in' | 'break'.
  * Everything else (worked time, breaks, balances) is calculated from the events.
+ *
+ * Two ways of counting a day (settings.countMode):
+ *   'worked'    – time in the office minus all breaks
+ *   'turnstile' – time inside the building: breaks spent inside (settings.insideKinds) still count,
+ *                 matching a turnstile report that only sees you leave the building.
  */
 
 export const dayKey = (d = new Date()) => {
@@ -85,14 +90,17 @@ export function summarize(events, now = Date.now(), settings) {
     s.breakStartedAt = since;
     s.currentBreakKind = kind;
   }
-  s.countedMs = s.workedMs;
+  const inside = settings?.insideKinds ?? {};
+  s.insideMs =
+    s.workedMs + Object.keys(s.breakByKind).reduce((a, k) => a + (inside[k] ? s.breakByKind[k] : 0), 0);
+  s.countedMs = settings?.countMode === 'turnstile' ? s.insideMs : s.workedMs;
   return s;
 }
 
-/** Wall-clock time at which worked time reaches target, assuming no more breaks. */
+/** Wall-clock time at which counted time reaches target, assuming no more breaks. */
 export function leaveAt(sum, targetMs, now = Date.now()) {
   if (sum.status === 'out') return null;
-  const remaining = targetMs - sum.workedMs;
+  const remaining = targetMs - (sum.countedMs ?? sum.workedMs);
   return now + Math.max(0, remaining);
 }
 
