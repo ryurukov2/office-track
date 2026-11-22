@@ -6,6 +6,8 @@
  * plus manual corrections, which don't change the status:
  *   { id: string, type: 'adjust', ts: number, deltaMs: number }   e.g. -10 min for a forgotten smoke break
  *
+ * Days off are stored separately: { "YYYY-MM-DD": 'vacation' | 'sick' | 'holiday' | 'other' }.
+ *
  * Status is derived from the last event: 'out' | 'in' | 'break'.
  * Everything else (worked time, breaks, balances) is calculated from the events.
  *
@@ -148,6 +150,13 @@ export function fmtBalance(ms) {
   if (Math.abs(ms) < 60_000) return 'on target';
   return ms > 0 ? `+${fmtDur(ms)} overtime` : `${fmtDur(-ms)} below quota`;
 }
+
+export const OFF_LABELS = {
+  vacation: '🏖️ Vacation',
+  sick: '🤒 Sick',
+  holiday: '🎉 Holiday',
+  other: '📅 Day off',
+};
 
 export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 

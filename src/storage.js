@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const DAY_PREFIX = 'day:';
 
 const SETTINGS_KEY = 'settings';
+const OFF_DAYS_KEY = 'offDays';
 
 export const DEFAULT_SETTINGS = {
   targetMinutes: 7 * 60 + 40, // daily quota
@@ -62,4 +63,22 @@ export async function loadSettings() {
 
 export async function saveSettings(s) {
   await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+/** Days off: { "YYYY-MM-DD": 'vacation' | 'sick' | 'holiday' | 'other' } */
+export async function loadOffDays() {
+  try {
+    const raw = await AsyncStorage.getItem(OFF_DAYS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function setOffDay(key, type) {
+  const all = await loadOffDays();
+  if (type) all[key] = type;
+  else delete all[key];
+  await AsyncStorage.setItem(OFF_DAYS_KEY, JSON.stringify(all));
+  return all;
 }
