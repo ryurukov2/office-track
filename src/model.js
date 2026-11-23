@@ -83,6 +83,7 @@ export function summarize(events, now = Date.now(), settings) {
       kind = e.kind ?? 'other';
     } else {
       s.status = 'out';
+      s.lastOut = e.ts;
     }
   }
   close(Math.max(now, since));

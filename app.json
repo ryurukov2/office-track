@@ -29,7 +29,8 @@
           "icon": "./assets/notification-icon.png",
           "color": "#3b82f6"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {
