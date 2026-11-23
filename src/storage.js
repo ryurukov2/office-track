@@ -10,6 +10,16 @@ export const DEFAULT_SETTINGS = {
   workdays: [1, 2, 3, 4, 5], // Date.getDay(): 0 = Sunday
   countMode: 'worked', // 'worked' | 'turnstile' (see model.js)
   insideKinds: { smoke: false, lunch: false, other: false }, // breaks spent inside the building
+  reminders: {
+    longBreak: true,
+    breakLimits: { smoke: 15, lunch: 60, other: 30 }, // minutes
+    forgotLeave: true,
+    forgotLeaveAt: 20 * 60, // minutes since midnight
+    noArrival: false,
+    noArrivalAt: 10 * 60,
+    quotaReached: true,
+    monthTarget: false,
+  },
 };
 
 /** Fills in defaults for settings saved by older versions. */
@@ -19,6 +29,11 @@ function withDefaults(saved) {
     ...d,
     ...saved,
     insideKinds: { ...d.insideKinds, ...saved.insideKinds },
+    reminders: {
+      ...d.reminders,
+      ...saved.reminders,
+      breakLimits: { ...d.reminders.breakLimits, ...saved.reminders?.breakLimits },
+    },
   };
 }
 
