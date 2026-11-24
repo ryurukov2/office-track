@@ -6,37 +6,48 @@ Built with **React Native + Expo** in plain JavaScript.
 
 ## Features
 
-- **One-tap tracking**: big buttons for *Arrived*, *Smoke*, *Lunch*, *Other break*, *Back* and *Leave*. Only the buttons that make sense right now are shown.
+- **One-tap tracking**: big buttons for *Arrived*, *Smoke*, *Lunch*, *Other break*, *Back* and *Leave*, with haptic feedback. Only the buttons that make sense right now are shown.
 - **Notification with action buttons**: while you're in the office, a notification that can't be swiped away shows when you can leave and has Smoke / Lunch / Leave (or Back) buttons, reachable from the lock screen. Pressing them records the action in the background without opening the app.
-- **Daily quota** (default **7:40**, adjustable in 5-minute steps) with a progress bar and "can leave at HH:MM".
-- **Monthly balance**: every day you come in adds `worked − quota` to the month's balance, so an 8:00 day and a 7:20 day cancel out. Shows "+2h 00m overtime" / "30m below quota", plus the time to leave to stay on target for the month. Days you don't come in don't count. A fresh balance starts each month.
-- **History**: per-month totals, balance and daily average; tap a month to see each day with its +/− and its smoke / lunch break time.
-- **Day editor**: open any day (today or from History) to add or subtract time manually (e.g. −10m for a forgotten smoke break), move or delete single entries, or delete the whole day.
-- **Battery friendly**: no GPS, Wi-Fi scanning, network or background service. The notification text only changes when you tap something, and the on-screen clock runs only while the app is open.
+- **Home-screen widget**: status, leave time, monthly balance and one-tap buttons, without opening the app.
+- **Daily quota** (default **7:40**) with a progress bar and "can leave at HH:MM".
+- **Monthly balance**: every workday (Mon–Fri by default) is expected to have the full quota; weekend work counts as overtime. Shows "+2h 00m overtime" / "30m below quota", plus the time to leave to stay on target for the month. A fresh balance starts each month.
+- **Days off**: mark vacation, sick days and holidays (also in advance) so they don't count against the quota.
+- **Turnstile mode**: count time inside the building instead of time minus all breaks. Choose which breaks happen inside (e.g. lunch in the canteen) to match the company's turnstile report.
+- **Reminders**: still on a break after X minutes, still checked in late in the evening, not checked in by 10:00 on a workday, daily quota reached, monthly target reached. Each one has action buttons, e.g. *Back* on the long-break reminder.
+- **History**: per-month balance with every day's +/−, missed workdays highlighted, days off and planned days off.
+- **Stats**: average arrival and leave time, average breaks and smoke breaks, days on target, current streak, and a bar chart of the month.
+- **CSV export**: export a month or everything and share it (email, Drive, ...) to compare with the turnstile report.
+- **Day editor**: open any day to add or subtract time manually (e.g. −10m for a forgotten smoke break), move or delete single entries, mark it as a day off, or delete the whole day.
+- **Battery friendly**: no GPS, Wi-Fi scanning, network or background service. Reminders are single scheduled alarms; the notification and widget only change when you tap something.
 - **Private**: all data stays on the phone (AsyncStorage).
 
 ## How the numbers are calculated
 
-Each day is stored as a list of timestamped events (`in`, `break`, `back`, `out`). The app walks them in order:
+Each day is stored as a list of timestamped events (`in`, `break`, `back`, `out`, plus manual `adjust` entries). The app walks them in order:
 
 - time while **in** → worked
 - time while **on break** → break (split by smoke / lunch / other)
 - time while **out** → not counted
-- manual adjustments (`adjust` events) are added to the worked time
+- manual adjustments are added to the worked time
 
-Monthly balance = Σ (worked − quota) over the tracked days of that month.
+In **turnstile mode**, breaks of the kinds marked as "inside the building" are counted as well.
+
+Monthly balance = Σ counted time − quota × expected workdays, where expected workdays are the configured weekdays since you started using the app, minus days off. A day only counts once it's finished (you checked out), so the balance changes once a day. While you're in the office the app still shows two leave times: one for today's quota and one that keeps the month on target.
 
 ## Project structure
 
 ```
-App.js            UI: Today screen, History screen, edit dialog
-src/model.js      pure logic: events → worked/break time, balances, formatting
-src/storage.js    persistence (AsyncStorage): days and settings
-src/notify.js     the notification and its action buttons
-src/actions.js    actions shared by the UI and the background task
-src/backgroundTask.js  handles notification buttons without opening the app
-app.json          Expo config (app name, Android package, plugins)
-eas.json          EAS build profiles (`preview` builds an installable APK)
+App.js                      app shell: tabs, state, day editor
+src/model.js                pure logic: events → time, balances, reports, stats
+src/storage.js              persistence (AsyncStorage): days, days off, settings
+src/actions.js              actions shared by the UI, background task and widget
+src/notify.js               status notification, action buttons and reminders
+src/backgroundTask.js       handles notification buttons without opening the app
+src/export.js               CSV export
+src/widget/                 home-screen widget and its background handler
+src/screens/                Today, History, Stats and Settings screens
+src/components/DayModal.js  day editor
+src/ui.js                   shared components and styles
 ```
 
 ## Development
@@ -54,10 +65,10 @@ npx eas-cli@latest build -p android --profile preview
 
 ## Tech
 
-React Native · Expo SDK 58 · expo-notifications · AsyncStorage · EAS Build
+React Native · Expo SDK 58 · expo-notifications · expo-task-manager · react-native-android-widget · AsyncStorage · EAS Build
 
 ## Roadmap
 
-- Home-screen widget and Quick Settings tile
-- CSV export to compare with the company's turnstile report
+- Quick Settings tile
 - Store the quota per day so changing it doesn't recalculate past months
+- Backup / restore
