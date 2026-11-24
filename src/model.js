@@ -54,6 +54,7 @@ export function summarize(events, now = Date.now(), settings) {
     workedMs: 0,
     breakMs: 0,
     breakByKind: { smoke: 0, lunch: 0, other: 0 },
+    breakCountByKind: { smoke: 0, lunch: 0, other: 0 },
   };
   let since = 0;
   let kind = 'other';
@@ -81,6 +82,7 @@ export function summarize(events, now = Date.now(), settings) {
       if (s.firstIn === undefined) s.firstIn = e.ts;
       s.status = 'break';
       kind = e.kind ?? 'other';
+      s.breakCountByKind[kind] += 1;
     } else {
       s.status = 'out';
       s.lastOut = e.ts;
@@ -258,25 +260,43 @@ export function monthReport(days, offDays, monthPrefix, settings, opts) {
   return rangeReport(days, offDays, from, to, settings, opts);
 }
 
-/**
- * Monthly balance = sum of (worked - target) over days in the month that have
- * any tracked events. Days you didn't come in (weekends, holidays) don't count.
- */
-export function monthBalance(
-  days,
-  monthPrefix, // "2026-11"
-  targetMs,
-  excludeKey,
-) {
-  let balanceMs = 0;
-  let workedMs = 0;
-  let n = 0;
-  for (const d of days) {
-    if (!d.key.startsWith(monthPrefix) || d.key === excludeKey || d.events.length === 0) continue;
-    const w = summarize(d.events).workedMs;
-    workedMs += w;
-    balanceMs += w - targetMs;
-    n++;
+/** Minutes since midnight, e.g. 545 -> "9:05". */
+const minutesOfDay = (ts) => {
+  const d = new Date(ts);
+  return d.getHours() * 60 + d.getMinutes();
+};
+export const fmtMinutes = (m) => fmtHM(m * 60_000);
+
+const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+/** Stats for the rows of a report (see rangeReport). */
+export function statsFor(rows, todayKey = dayKey()) {
+  const worked = rows.filter((r) => r.type === 'worked');
+  const finished = worked.filter((r) => r.sum.status === 'out');
+  const chrono = [...rows].filter((r) => r.type === 'worked' || r.type === 'missing').reverse();
+
+  // streak: most recent consecutive counted days on target (today skipped while in progress)
+  let streak = 0;
+  for (let i = chrono.length - 1; i >= 0; i--) {
+    const r = chrono[i];
+    if (r.key === todayKey && r.sum?.status !== 'out') continue;
+    if (r.delta >= -60_000) streak++;
+    else break;
   }
-  return { balanceMs, workedMs, days: n };
+
+  const longest = worked.reduce((best, r) => (!best || r.counted > best.counted ? r : best), null);
+  return {
+    days: worked.length,
+    avgArrival: avg(worked.filter((r) => r.sum.firstIn).map((r) => minutesOfDay(r.sum.firstIn))),
+    avgLeave: avg(finished.filter((r) => r.sum.lastOut).map((r) => minutesOfDay(r.sum.lastOut))),
+    avgCounted: avg(worked.map((r) => r.counted)),
+    avgBreak: avg(worked.map((r) => r.sum.breakMs)),
+    avgSmoke: avg(worked.map((r) => r.sum.breakByKind.smoke)),
+    avgSmokeCount: avg(worked.map((r) => r.sum.breakCountByKind.smoke)),
+    avgLunch: avg(worked.map((r) => r.sum.breakByKind.lunch)),
+    onTarget: chrono.filter((r) => r.expected && r.delta >= -60_000).length,
+    targetDays: chrono.filter((r) => r.expected).length,
+    streak,
+    longest,
+  };
 }
