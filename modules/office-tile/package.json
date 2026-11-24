@@ -1,0 +1,7 @@
+{
+  "name": "office-tile",
+  "version": "1.0.0",
+  "description": "Android Quick Settings tile for Office Tracker",
+  "main": "index.js",
+  "private": true
+}

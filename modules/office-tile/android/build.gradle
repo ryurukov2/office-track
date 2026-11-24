@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'dev.ryurukov.officetracker'
+version = '1.0.0'
+
+expoModule {
+  v2 true
+}
+
+android {
+  namespace "expo.modules.officetile"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // Replaced by the matching react-android version by the React Native Gradle plugin.
+  //noinspection GradleDynamicVersion
+  implementation "com.facebook.react:react-native:+"
+}

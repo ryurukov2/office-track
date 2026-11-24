@@ -1,0 +1,26 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+  <application>
+    <!-- The Quick Settings tile: swipe down, tap to start / end a break. -->
+    <service
+      android:name="expo.modules.officetile.OfficeTileService"
+      android:exported="true"
+      android:icon="@drawable/office_tile_icon"
+      android:label="Office break"
+      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+        android:value="true" />
+    </service>
+
+    <!-- Runs the app's JS (headless) to record the break after a tile tap. -->
+    <service
+      android:name="expo.modules.officetile.OfficeTileTaskService"
+      android:exported="false" />
+  </application>
+</manifest>
