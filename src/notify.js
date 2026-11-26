@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { addDays, fmtBalance, fmtDur, fmtHM, fmtTime, isWorkday, KIND_LABELS, parseKey } from './model';
@@ -7,6 +8,7 @@ const REMINDER_CHANNEL = 'reminders'; // pops up with sound
 
 const STATUS_ID = 'office-tracker-status';
 
+const QUOTA_KEY = 'quotaReminder'; // { day, at } of the last planned quota reminder
 const REMINDER_IDS = ['rem-break', 'rem-leave', 'rem-quota', 'rem-month', 'rem-arrive'];
 
 export const CAT_IN = 'tracker_in';
@@ -123,9 +125,10 @@ export async function scheduleReminders({
   leaveMonth,
 }) {
   if (Platform.OS === 'web') return;
-  await Promise.all(
-    REMINDER_IDS.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})),
-  );
+  // Cancel every pending reminder, including any stray copies, before planning new ones.
+  const pending = await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
+  const ids = new Set([...REMINDER_IDS, ...pending.map((n) => n.identifier).filter((id) => id.startsWith('rem-'))]);
+  await Promise.all([...ids].map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})));
   const rem = settings.reminders;
   const targetMs = settings.targetMinutes * 60_000;
 
@@ -151,7 +154,11 @@ export async function scheduleReminders({
     );
   }
 
-  if (sum.status === 'in' && rem.quotaReached && leave && sum.countedMs < targetMs) {
+  // The quota reminder goes off at most once a day: once its time has passed it's not planned again.
+  const quotaSent = JSON.parse((await AsyncStorage.getItem(QUOTA_KEY)) ?? 'null');
+  const quotaDoneToday = quotaSent?.day === todayKey && quotaSent.at <= Date.now();
+  if (sum.status === 'in' && rem.quotaReached && leave && sum.countedMs < targetMs && !quotaDoneToday) {
+    await AsyncStorage.setItem(QUOTA_KEY, JSON.stringify({ day: todayKey, at: leave }));
     await schedule(
       'rem-quota',
       leave,

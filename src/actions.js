@@ -72,8 +72,17 @@ export function todayInfo({ settings, days, offDays }, now = Date.now()) {
   };
 }
 
-/** Re-renders the notification, re-plans reminders and updates the home-screen widget. */
-export async function refreshAll() {
+/**
+ * Re-renders the notification, re-plans reminders and updates the home-screen widget.
+ * Calls are queued so two refreshes (e.g. tile + notification tap) never interleave.
+ */
+let refreshQueue = Promise.resolve();
+export function refreshAll() {
+  refreshQueue = refreshQueue.then(refreshNow, refreshNow);
+  return refreshQueue;
+}
+
+async function refreshNow() {
   const state = await loadState();
   const info = todayInfo(state);
   await Promise.all([
@@ -103,6 +112,17 @@ export async function recordAction(type, kind) {
   await refreshAll();
 }
 
+/**
+ * Quick Settings tile tap: starts a break when in, ends it when on a break.
+ * Always re-syncs the tile afterwards (it may show a stale status).
+ */
+export async function toggleBreak() {
+  const status = statusOf(await loadDay(dayKey()));
+  if (status === 'in') return recordAction('break', 'other');
+  if (status === 'break') return recordAction('back');
+  return refreshAll();
+}
+
 /** Replaces all events of a day (edit, adjust or delete a whole day). */
 export async function saveDayEvents(key, events) {
   await saveDay(key, events);
@@ -116,6 +136,8 @@ export async function markOffDay(key, type) {
   return all;
 }
 
+const inFlight = new Set(); // presses being handled right now in this JS runtime
+
 /**
  * Handles a notification button press. Safe to call twice for the same press
  * (from the background task and from the app), only the first one counts.
@@ -126,7 +148,8 @@ export async function handleNotificationResponse(response) {
   if (!mapped) return false;
   const n = response.notification;
   const id = `${n?.request?.identifier}|${n?.date}|${action}`;
-  if ((await AsyncStorage.getItem(HANDLED_KEY)) === id) return false;
+  if (inFlight.has(id) || (await AsyncStorage.getItem(HANDLED_KEY)) === id) return false;
+  inFlight.add(id);
   await AsyncStorage.setItem(HANDLED_KEY, id);
   if (isReminder(n?.request?.identifier)) await dismiss(n.request.identifier);
   await recordAction(...mapped);
