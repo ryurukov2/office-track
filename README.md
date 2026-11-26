@@ -9,6 +9,7 @@ Built with **React Native + Expo** in plain JavaScript.
 - **One-tap tracking**: big buttons for *Arrived*, *Smoke*, *Lunch*, *Other break*, *Back* and *Leave*, with haptic feedback. Only the buttons that make sense right now are shown.
 - **Notification with action buttons**: while you're in the office, a notification that can't be swiped away shows when you can leave and has Smoke / Lunch / Leave (or Back) buttons, reachable from the lock screen. Pressing them records the action in the background without opening the app.
 - **Home-screen widget**: status, leave time, monthly balance and one-tap buttons, without opening the app.
+- **Quick Settings tile**: swipe down and tap to start or end a break; it always shows the real status.
 - **Daily quota** (default **7:40**) with a progress bar and "can leave at HH:MM".
 - **Monthly balance**: every workday (Mon–Fri by default) is expected to have the full quota; weekend work counts as overtime. Shows "+2h 00m overtime" / "30m below quota", plus the time to leave to stay on target for the month. A fresh balance starts each month.
 - **Days off**: mark vacation, sick days and holidays (also in advance) so they don't count against the quota.
@@ -48,13 +49,20 @@ src/widget/                 home-screen widget and its background handler
 src/screens/                Today, History, Stats and Settings screens
 src/components/DayModal.js  day editor
 src/ui.js                   shared components and styles
+modules/office-tile/        Quick Settings tile (small native Android module)
 ```
+
+## Install
+
+Download the APK from the [releases page](https://github.com/ryurukov2/office-track/releases) and open it on your phone (allow installing from your browser or file manager when Android asks).
 
 ## Development
 
+The widget and the tile are native code, so the app runs in a development build rather than Expo Go:
+
 ```bash
 npm install
-npx expo start        # scan the QR code with the Expo Go app on your phone
+npx expo run:android  # builds and installs a development build on a connected phone or emulator
 ```
 
 Build an installable APK in the cloud (free Expo account):
@@ -69,6 +77,5 @@ React Native · Expo SDK 58 · expo-notifications · expo-task-manager · react-
 
 ## Roadmap
 
-- Quick Settings tile
 - Store the quota per day so changing it doesn't recalculate past months
 - Backup / restore
