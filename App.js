@@ -15,6 +15,7 @@ import {
   todayInfo,
 } from './src/actions';
 import { DayModal } from './src/components/DayModal';
+import { WhatsNew } from './src/components/WhatsNew';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
@@ -162,6 +163,8 @@ export default function App() {
           onClose={() => setDayEdit(null)}
         />
       )}
+
+      <WhatsNew loaded={loaded} hasData={state.days.length > 0 || Object.keys(state.offDays).length > 0} />
     </View>
   );
 }
