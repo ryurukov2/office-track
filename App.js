@@ -19,17 +19,21 @@ import { TodayScreen } from './src/screens/TodayScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
+import { SwipePager } from './src/SwipePager';
 import { styles } from './src/ui';
 
 const TABS = [
-  ['today', 'Today'],
-  ['history', 'History'],
-  ['stats', 'Stats'],
-  ['settings', 'Settings'],
+  ['today', 'Today', 'time'],
+  ['history', 'History', 'calendar'],
+  ['stats', 'Stats', 'stats-chart'],
+  ['settings', 'Settings', 'settings'],
 ];
 
 export default function App() {
-  const [tab, setTab] = useState('today');
+  const [tabIndex, setTabIndex] = useState(0);
+  const tab = TABS[tabIndex][0];
   const [state, setState] = useState({ settings: DEFAULT_SETTINGS, days: [], offDays: {} });
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -95,26 +99,50 @@ export default function App() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
+      <SwipePager
+        index={tabIndex}
+        onIndexChange={setTabIndex}
+        count={TABS.length}
+        renderPage={(i) => {
+          switch (TABS[i][0]) {
+            case 'today':
+              return (
+                <TodayScreen
+                  info={info}
+                  settings={state.settings}
+                  now={now}
+                  onRecord={record}
+                  onEditDay={(selectedId) => setDayEdit({ key: today, selectedId })}
+                />
+              );
+            case 'history':
+              return <HistoryScreen state={state} onOpenDay={(key) => setDayEdit({ key })} />;
+            case 'stats':
+              return <StatsScreen state={state} />;
+            default:
+              return <SettingsScreen settings={state.settings} onChange={saveSettingsAndRefresh} />;
+          }
+        }}
+      />
+
+      {/* bottom tab bar; swiping left / right also switches tabs */}
       <View style={styles.tabs}>
-        {TABS.map(([id, label]) => (
-          <Pressable key={id} onPress={() => setTab(id)} style={[styles.tab, tab === id && styles.tabActive]}>
+        {TABS.map(([id, label, icon], i) => (
+          <Pressable
+            key={id}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setTabIndex(i);
+            }}
+            style={styles.tab}
+          >
+            <View style={[styles.tabPill, tab === id && styles.tabPillActive]}>
+              <Ionicons name={tab === id ? icon : `${icon}-outline`} size={21} color={tab === id ? '#fff' : '#64748b'} />
+            </View>
             <Text style={[styles.tabText, tab === id && styles.tabTextActive]}>{label}</Text>
           </Pressable>
         ))}
       </View>
-
-      {tab === 'today' && (
-        <TodayScreen
-          info={info}
-          settings={state.settings}
-          now={now}
-          onRecord={record}
-          onEditDay={(selectedId) => setDayEdit({ key: today, selectedId })}
-        />
-      )}
-      {tab === 'history' && <HistoryScreen state={state} onOpenDay={(key) => setDayEdit({ key })} />}
-      {tab === 'stats' && <StatsScreen state={state} />}
-      {tab === 'settings' && <SettingsScreen settings={state.settings} onChange={saveSettingsAndRefresh} />}
 
       {dayEdit && (
         <DayModal

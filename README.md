@@ -10,6 +10,7 @@ Built with **React Native + Expo** in plain JavaScript.
 - **Notification with action buttons**: while you're in the office, a notification that can't be swiped away shows when you can leave and has Smoke / Lunch / Leave (or Back) buttons, reachable from the lock screen. Pressing them records the action in the background without opening the app.
 - **Home-screen widget**: status, leave time, monthly balance and one-tap buttons, without opening the app.
 - **Quick Settings tile**: swipe down and tap to start or end a break; it always shows the real status.
+- **Swipe between tabs**: Today, History, Stats and Settings, with the tab bar at the bottom.
 - **Daily quota** (default **7:40**) with a progress bar and "can leave at HH:MM".
 - **Monthly balance**: every workday (Mon–Fri by default) is expected to have the full quota; weekend work counts as overtime. Shows "+2h 00m overtime" / "30m below quota", plus the time to leave to stay on target for the month. A fresh balance starts each month.
 - **Days off**: mark vacation, sick days and holidays (also in advance) so they don't count against the quota.
@@ -49,6 +50,7 @@ src/widget/                 home-screen widget and its background handler
 src/screens/                Today, History, Stats and Settings screens
 src/components/DayModal.js  day editor
 src/ui.js                   shared components and styles
+src/SwipePager.js           swipe left / right between tabs
 modules/office-tile/        Quick Settings tile (small native Android module)
 ```
 
